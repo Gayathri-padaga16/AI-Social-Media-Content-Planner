@@ -482,3 +482,85 @@ Return ONLY valid JSON:
         result.setdefault("reel_script", None)
 
     return result
+def review_post(post):
+    prompt = f"""
+Review the following social media content as an expert
+social media quality analyst.
+
+POST DETAILS:
+
+Platform: {post.get("platform", "")}
+Content Type: {post.get("content_type", "")}
+Language: {post.get("language", "English")}
+Product: {post.get("product", "")}
+Target Audience: {post.get("audience", "")}
+
+Caption:
+{post.get("caption", "")}
+
+Hashtags:
+{json.dumps(post.get("hashtags", []), ensure_ascii=False)}
+
+Call to Action:
+{post.get("call_to_action", "")}
+
+Creative Idea:
+{post.get("creative_idea", "")}
+
+TASKS:
+
+1. Evaluate caption clarity, grammar and engagement.
+2. Evaluate hashtag relevance.
+3. Evaluate CTA effectiveness.
+4. Evaluate readability and platform suitability.
+5. Identify strengths and weaknesses.
+6. Suggest specific improvements.
+7. Provide an improved caption, hashtags and CTA.
+
+Give each score between 0 and 100.
+
+Return valid JSON only, using this structure:
+
+{{
+    "overall_score": 85,
+    "caption_score": 85,
+    "hashtag_score": 90,
+    "cta_score": 80,
+    "readability_score": 85,
+    "status": "Approved",
+    "strengths": [
+        "Clear product description"
+    ],
+    "issues": [
+        "CTA could be more engaging"
+    ],
+    "suggestions": [
+        "Use a stronger opening sentence"
+    ],
+    "improved_caption": "Improved caption here",
+    "improved_hashtags": ["#Example"],
+    "improved_cta": "Improved CTA here"
+}}
+
+IMPORTANT:
+- Scores must be between 0 and 100.
+- Use Approved if overall_score is 75 or higher.
+- Use Needs Improvement if overall_score is below 75.
+- Evaluate honestly. Do not automatically approve content.
+- Preserve the selected language.
+- Do not invent product information.
+- Return JSON only.
+"""
+
+    result = parsed(
+        ask(
+            "You are an expert social media content reviewer. "
+            "Evaluate content objectively and return valid JSON only.",
+            prompt
+        )
+    )
+
+    if not isinstance(result, dict):
+        raise RuntimeError("AI returned an invalid review.")
+
+    return result

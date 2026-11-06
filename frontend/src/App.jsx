@@ -1,8 +1,10 @@
+
 import { useMemo, useState } from "react";
 import axios from "axios";
 import "./style.css";
 
-const API_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+const API_URL =
+  import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 
 const platforms = [
   "Instagram", "Facebook", "LinkedIn", "YouTube",
@@ -77,6 +79,11 @@ export default function App() {
   const [copied, setCopied] = useState("");
   const [activePage, setActivePage] = useState("planner");
 
+  // AI Review states
+  const [reviewResults, setReviewResults] = useState({});
+  const [reviewingId, setReviewingId] = useState(null);
+
+  // Group generated posts by date
   const groupedPosts = useMemo(() => {
     const groups = {};
 
@@ -150,6 +157,10 @@ export default function App() {
       );
 
       setPosts(response.data.posts || []);
+
+      // Remove reviews belonging to the previous generated posts
+      setReviewResults({});
+
       setActivePage("planner");
 
     } catch (err) {
@@ -187,6 +198,13 @@ export default function App() {
         )
       );
 
+      // Remove old review because the post has changed
+      setReviewResults((previous) => {
+        const updated = { ...previous };
+        delete updated[post.id];
+        return updated;
+      });
+
     } catch (err) {
       setError(
         err.response?.data?.detail ||
@@ -194,6 +212,46 @@ export default function App() {
       );
     } finally {
       setRegeneratingId(null);
+    }
+  }
+
+  // Review an individual post using AI
+  async function reviewPost(post) {
+    setError("");
+    setReviewingId(post.id);
+
+    try {
+      const response = await axios.post(
+        `${API_URL}/api/review`,
+        {
+          platform: post.platform || "",
+          content_type: post.content_type || "",
+          language,
+          product: productName || product || "",
+          audience,
+          caption: post.caption || "",
+          hashtags: Array.isArray(post.hashtags)
+            ? post.hashtags
+            : [],
+          call_to_action: post.call_to_action || "",
+          creative_idea: post.creative_idea || ""
+        }
+      );
+
+      setReviewResults((previous) => ({
+        ...previous,
+        [post.id]: response.data.review
+      }));
+
+      setActivePage("review");
+
+    } catch (err) {
+      setError(
+        err.response?.data?.detail ||
+        "AI review failed. Please check that the backend is running."
+      );
+    } finally {
+      setReviewingId(null);
     }
   }
 
@@ -370,10 +428,99 @@ export default function App() {
     );
   }
 
+  // Display AI review results
+  function renderReviewResult(review) {
+    if (!review) return null;
+
+    const scores = [
+      ["Overall", review.overall_score],
+      ["Caption", review.caption_score],
+      ["Hashtags", review.hashtag_score],
+      ["CTA", review.cta_score],
+      ["Readability", review.readability_score]
+    ];
+
+    const statusText = String(review.status || "");
+    const isApproved = statusText.toLowerCase().includes("approved");
+
+    const sections = [
+      ["Strengths", review.strengths],
+      ["Issues to fix", review.issues],
+      ["Suggestions", review.suggestions]
+    ];
+
+    return (
+      <div className="review-result">
+        <div className="review-result-heading">
+          <h3>AI Review Results</h3>
+
+          <span
+            className={`review-status ${
+              isApproved ? "approved" : "improvement"
+            }`}
+          >
+            {review.status || "Review completed"}
+          </span>
+        </div>
+
+        <div className="review-scores">
+          {scores.map(([label, score]) => (
+            <div className="review-score" key={label}>
+              <strong>
+                {score !== null && score !== undefined
+                  ? `${score}/100`
+                  : "—"}
+              </strong>
+              <span>{label}</span>
+            </div>
+          ))}
+        </div>
+
+        {sections.map(([heading, items]) => (
+          <div className="review-section" key={heading}>
+            <h4>{heading}</h4>
+
+            {Array.isArray(items) && items.length > 0 ? (
+              <ul>
+                {items.map((item, index) => (
+                  <li key={index}>{item}</li>
+                ))}
+              </ul>
+            ) : (
+              <p>No information provided.</p>
+            )}
+          </div>
+        ))}
+
+        <div className="review-improved">
+          <h4>Suggested improved caption</h4>
+          <p>
+            {review.improved_caption ||
+              "No improved caption returned."}
+          </p>
+
+          <h4>Suggested hashtags</h4>
+          <p>
+            {Array.isArray(review.improved_hashtags)
+              ? review.improved_hashtags.join(" ")
+              : review.improved_hashtags || "No hashtags returned."}
+          </p>
+
+          <h4>Suggested call to action</h4>
+          <p>
+            {review.improved_cta || "No improved CTA returned."}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   // Display generated post
   function renderPost(post) {
     return (
-      <article key={post.id || `${post.platform}-${post.date}-${post.caption}`}>
+      <article
+        key={post.id || `${post.platform}-${post.date}-${post.caption}`}
+      >
         <div className="posthead">
           <b>{post.platform || "Social platform"}</b>
           <span>{post.content_type || "CONTENT"}</span>
@@ -414,6 +561,16 @@ export default function App() {
               ? "Regenerating..."
               : "Regenerate"}
           </button>
+
+          <button
+            className="review-button"
+            onClick={() => reviewPost(post)}
+            disabled={reviewingId === post.id}
+          >
+            {reviewingId === post.id
+              ? "Reviewing..."
+              : "Review with AI"}
+          </button>
         </div>
       </article>
     );
@@ -421,6 +578,7 @@ export default function App() {
 
   return (
     <div className="app">
+      {/* Sidebar */}
       <aside>
         <h2>SocialPilot AI</h2>
         <p>AI CONTENT PLANNER</p>
@@ -439,16 +597,25 @@ export default function App() {
           Weekly Calendar
         </button>
 
+        <button
+          className={`nav ${activePage === "review" ? "active" : ""}`}
+          onClick={() => setActivePage("review")}
+        >
+          AI Review
+        </button>
+
         <small>Generative AI · Agentic workflow</small>
       </aside>
 
+      {/* Main workspace */}
       <main>
         <header>
           <span>AI Social-Media Content Planner</span>
           <span>Plan · Generate · Review · Export</span>
         </header>
 
-        {activePage === "planner" ? (
+        {/* CONTENT PLANNER */}
+        {activePage === "planner" && (
           <>
             <section className="hero">
               <div>
@@ -639,7 +806,6 @@ export default function App() {
                 <div className="resulthead">
                   <div>
                     <h3>Generated content</h3>
-
                     <small>
                       {posts.length
                         ? `${posts.length} content items generated`
@@ -663,7 +829,6 @@ export default function App() {
                   <div className="empty">
                     <div>✦</div>
                     <h3>Your content workspace is ready</h3>
-
                     <p>
                       Enter your campaign details, choose social platforms,
                       and generate content to see your posts here.
@@ -673,7 +838,10 @@ export default function App() {
               </section>
             </div>
           </>
-        ) : (
+        )}
+
+        {/* WEEKLY CALENDAR */}
+        {activePage === "calendar" && (
           <section className="calendar-page">
             <div className="calendar-heading">
               <div>
@@ -730,10 +898,92 @@ export default function App() {
               <div className="empty calendar-empty">
                 <div>▦</div>
                 <h3>No scheduled posts yet</h3>
-
                 <p>
                   Generate content in the Content Planner to populate
                   your weekly calendar.
+                </p>
+
+                <button onClick={() => setActivePage("planner")}>
+                  Go to Content Planner
+                </button>
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* AI REVIEW PAGE */}
+        {activePage === "review" && (
+          <section className="review-page">
+            <div className="review-heading">
+              <small>AI CONTENT QUALITY CHECK</small>
+              <h1>AI Content Review</h1>
+              <p>
+                Analyse your generated posts and get suggestions to improve
+                captions, hashtags and calls to action.
+              </p>
+            </div>
+
+            {error && (
+              <p className="error" role="alert">
+                {error}
+              </p>
+            )}
+
+            {posts.length > 0 ? (
+              <div className="review-post-list">
+                {posts.map((post) => (
+                  <article
+                    className="review-card"
+                    key={post.id}
+                  >
+                    <div className="posthead">
+                      <b>{post.platform || "Social platform"}</b>
+                      <span>{post.content_type || "CONTENT"}</span>
+                    </div>
+
+                    <small>{getPostDate(post)}</small>
+
+                    <div className="review-original">
+                      <h4>Original caption</h4>
+                      <p>{post.caption}</p>
+
+                      {post.hashtags?.length > 0 && (
+                        <p className="tags">
+                          {post.hashtags.join(" ")}
+                        </p>
+                      )}
+
+                      {post.call_to_action && (
+                        <p>
+                          <strong>CTA:</strong> {post.call_to_action}
+                        </p>
+                      )}
+                    </div>
+
+                    <button
+                      className="review-button"
+                      onClick={() => reviewPost(post)}
+                      disabled={reviewingId === post.id}
+                    >
+                      {reviewingId === post.id
+                        ? "Analysing content..."
+                        : reviewResults[post.id]
+                          ? "Review again"
+                          : "Review with AI"}
+                    </button>
+
+                    {reviewResults[post.id] &&
+                      renderReviewResult(reviewResults[post.id])}
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <div className="empty">
+                <div>✦</div>
+                <h3>No content available for review</h3>
+                <p>
+                  Generate social media posts first. Your posts will appear
+                  here for AI quality checking.
                 </p>
 
                 <button onClick={() => setActivePage("planner")}>
