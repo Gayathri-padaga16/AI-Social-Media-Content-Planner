@@ -1,4 +1,3 @@
-
 import { useMemo, useState } from "react";
 import axios from "axios";
 import "./style.css";
@@ -36,8 +35,7 @@ const formats = ["Any format", "Post", "Carousel", "Reel", "Story"];
 const languages = ["English", "Telugu", "Hindi"];
 
 function csvCell(value) {
-  const text = value == null ? "" : String(value);
-  return `"${text.replace(/"/g, '""')}"`;
+  return `"${String(value ?? "").replace(/"/g, '""')}"`;
 }
 
 function getPostDate(post) {
@@ -45,17 +43,18 @@ function getPostDate(post) {
 
   const date = new Date(`${post.date}T00:00:00`);
 
-  return Number.isNaN(date.getTime())
-    ? post.date
-    : date.toLocaleDateString("en-IN", {
-        weekday: "long",
-        day: "numeric",
-        month: "short",
-        year: "numeric"
-      });
+  if (Number.isNaN(date.getTime())) return post.date;
+
+  return date.toLocaleDateString("en-IN", {
+    weekday: "long",
+    day: "numeric",
+    month: "short",
+    year: "numeric"
+  });
 }
 
 export default function App() {
+  // Campaign form
   const [business, setBusiness] = useState("");
   const [product, setProduct] = useState("");
   const [productName, setProductName] = useState("");
@@ -72,18 +71,19 @@ export default function App() {
   const [selected, setSelected] = useState([]);
   const [count, setCount] = useState(3);
 
+  // Application states
   const [posts, setPosts] = useState([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [regeneratingId, setRegeneratingId] = useState(null);
+  const [reviewingId, setReviewingId] = useState(null);
   const [copied, setCopied] = useState("");
   const [activePage, setActivePage] = useState("planner");
 
-  // AI Review states
+  // AI Review results
   const [reviewResults, setReviewResults] = useState({});
-  const [reviewingId, setReviewingId] = useState(null);
 
-  // Group generated posts by date
+  // Group posts by date
   const groupedPosts = useMemo(() => {
     const groups = {};
 
@@ -92,26 +92,17 @@ export default function App() {
         String(a.date || "").localeCompare(String(b.date || ""))
       )
       .forEach((post) => {
-        const key = post.date || "Date not provided";
+        const date = post.date || "Date not provided";
 
-        if (!groups[key]) {
-          groups[key] = [];
-        }
+        if (!groups[date]) groups[date] = [];
 
-        groups[key].push(post);
+        groups[date].push(post);
       });
 
     return Object.entries(groups);
   }, [posts]);
 
-  function togglePlatform(platform) {
-    setSelected((previous) =>
-      previous.includes(platform)
-        ? previous.filter((item) => item !== platform)
-        : [...previous, platform]
-    );
-  }
-
+  // Campaign details
   function campaignDetails() {
     return {
       business,
@@ -128,7 +119,16 @@ export default function App() {
     };
   }
 
-  // Generate AI content
+  // Select platforms
+  function togglePlatform(platform) {
+    setSelected((previous) =>
+      previous.includes(platform)
+        ? previous.filter((item) => item !== platform)
+        : [...previous, platform]
+    );
+  }
+
+  // Generate content
   async function generate() {
     setError("");
 
@@ -156,24 +156,23 @@ export default function App() {
         }
       );
 
-      setPosts(response.data.posts || []);
+      const generatedPosts = response.data.posts || [];
 
-      // Remove reviews belonging to the previous generated posts
+      setPosts(generatedPosts);
       setReviewResults({});
-
       setActivePage("planner");
 
     } catch (err) {
       setError(
         err.response?.data?.detail ||
-        "Content generation failed. Please check that the backend is running."
+        "Content generation failed. Check your backend."
       );
     } finally {
       setBusy(false);
     }
   }
 
-  // Regenerate an individual post
+  // Regenerate individual post
   async function regenerate(post) {
     setError("");
     setRegeneratingId(post.id);
@@ -198,7 +197,6 @@ export default function App() {
         )
       );
 
-      // Remove old review because the post has changed
       setReviewResults((previous) => {
         const updated = { ...previous };
         delete updated[post.id];
@@ -215,7 +213,7 @@ export default function App() {
     }
   }
 
-  // Review an individual post using AI
+  // AI REVIEW FUNCTION
   async function reviewPost(post) {
     setError("");
     setReviewingId(post.id);
@@ -226,9 +224,9 @@ export default function App() {
         {
           platform: post.platform || "",
           content_type: post.content_type || "",
-          language,
-          product: productName || product || "",
-          audience,
+          language: language,
+          product: productName || product,
+          audience: audience,
           caption: post.caption || "",
           hashtags: Array.isArray(post.hashtags)
             ? post.hashtags
@@ -246,16 +244,19 @@ export default function App() {
       setActivePage("review");
 
     } catch (err) {
+      console.error("AI Review error:", err);
+
       setError(
         err.response?.data?.detail ||
-        "AI review failed. Please check that the backend is running."
+        err.message ||
+        "AI Review failed. Please check your backend connection."
       );
     } finally {
       setReviewingId(null);
     }
   }
 
-  // Copy post content
+  // Copy content
   async function copyPost(post) {
     try {
       const script = post.reel_script;
@@ -295,16 +296,14 @@ export default function App() {
       window.setTimeout(() => setCopied(""), 1800);
 
     } catch {
-      setError(
-        "Unable to copy. Please check your browser clipboard permissions."
-      );
+      setError("Unable to copy content. Please try again.");
     }
   }
 
-  // Export content as CSV
+  // Export CSV
   function exportCsv() {
     if (posts.length === 0) {
-      setError("Generate content before exporting the CSV file.");
+      setError("Generate content before exporting.");
       return;
     }
 
@@ -356,7 +355,7 @@ export default function App() {
     setError("");
   }
 
-  // Display Reel production script
+  // Reel script display
   function renderReelScript(script) {
     if (!script) return null;
 
@@ -379,30 +378,21 @@ export default function App() {
         )}
 
         {script.scenes?.map((scene, index) => (
-          <div
-            className="reel-scene"
-            key={`${scene.time || "scene"}-${index}`}
-          >
+          <div className="reel-scene" key={index}>
             <h5>
               Scene {index + 1} {scene.time ? `· ${scene.time}` : ""}
             </h5>
 
             {scene.visual && (
-              <p>
-                <strong>Visual:</strong> {scene.visual}
-              </p>
+              <p><strong>Visual:</strong> {scene.visual}</p>
             )}
 
             {scene.voiceover && (
-              <p>
-                <strong>Voice-over:</strong> {scene.voiceover}
-              </p>
+              <p><strong>Voice-over:</strong> {scene.voiceover}</p>
             )}
 
             {scene.on_screen_text && (
-              <p>
-                <strong>On-screen text:</strong> {scene.on_screen_text}
-              </p>
+              <p><strong>On-screen text:</strong> {scene.on_screen_text}</p>
             )}
           </div>
         ))}
@@ -428,7 +418,7 @@ export default function App() {
     );
   }
 
-  // Display AI review results
+  // AI Review result display
   function renderReviewResult(review) {
     if (!review) return null;
 
@@ -440,12 +430,13 @@ export default function App() {
       ["Readability", review.readability_score]
     ];
 
-    const statusText = String(review.status || "");
-    const isApproved = statusText.toLowerCase().includes("approved");
+    const isApproved = String(review.status || "")
+      .toLowerCase()
+      .includes("approved");
 
     const sections = [
       ["Strengths", review.strengths],
-      ["Issues to fix", review.issues],
+      ["Issues", review.issues],
       ["Suggestions", review.suggestions]
     ];
 
@@ -453,7 +444,6 @@ export default function App() {
       <div className="review-result">
         <div className="review-result-heading">
           <h3>AI Review Results</h3>
-
           <span
             className={`review-status ${
               isApproved ? "approved" : "improvement"
@@ -487,40 +477,35 @@ export default function App() {
                 ))}
               </ul>
             ) : (
-              <p>No information provided.</p>
+              <p>No information available.</p>
             )}
           </div>
         ))}
 
         <div className="review-improved">
-          <h4>Suggested improved caption</h4>
-          <p>
-            {review.improved_caption ||
-              "No improved caption returned."}
-          </p>
+          <h4>Improved caption</h4>
+          <p>{review.improved_caption || "Not available"}</p>
 
-          <h4>Suggested hashtags</h4>
+          <h4>Improved hashtags</h4>
           <p>
             {Array.isArray(review.improved_hashtags)
               ? review.improved_hashtags.join(" ")
-              : review.improved_hashtags || "No hashtags returned."}
+              : review.improved_hashtags || "Not available"}
           </p>
 
-          <h4>Suggested call to action</h4>
-          <p>
-            {review.improved_cta || "No improved CTA returned."}
-          </p>
+          <h4>Improved call to action</h4>
+          <p>{review.improved_cta || "Not available"}</p>
         </div>
       </div>
     );
   }
 
-  // Display generated post
-  function renderPost(post) {
+  // Post card
+  function renderPost(post, index) {
+    const postId = post.id ?? `${post.platform}-${post.date}-${index}`;
+
     return (
-      <article
-        key={post.id || `${post.platform}-${post.date}-${post.caption}`}
-      >
+      <article key={postId}>
         <div className="posthead">
           <b>{post.platform || "Social platform"}</b>
           <span>{post.content_type || "CONTENT"}</span>
@@ -578,7 +563,8 @@ export default function App() {
 
   return (
     <div className="app">
-      {/* Sidebar */}
+
+      {/* SIDEBAR */}
       <aside>
         <h2>SocialPilot AI</h2>
         <p>AI CONTENT PLANNER</p>
@@ -607,7 +593,7 @@ export default function App() {
         <small>Generative AI · Agentic workflow</small>
       </aside>
 
-      {/* Main workspace */}
+      {/* MAIN CONTENT */}
       <main>
         <header>
           <span>AI Social-Media Content Planner</span>
@@ -656,7 +642,7 @@ export default function App() {
                   <input
                     value={productName}
                     onChange={(e) => setProductName(e.target.value)}
-                    placeholder="Enter the exact product name"
+                    placeholder="Enter product name"
                   />
                 </label>
 
@@ -667,7 +653,7 @@ export default function App() {
                     onChange={(e) =>
                       setProductDescription(e.target.value)
                     }
-                    placeholder="Briefly describe the product"
+                    placeholder="Describe your product"
                   />
                 </label>
 
@@ -690,7 +676,7 @@ export default function App() {
                       onChange={(e) =>
                         setProductCategory(e.target.value)
                       }
-                      placeholder="e.g. Handmade décor"
+                      placeholder="e.g. Personalized gifts"
                     />
                   </label>
                 </div>
@@ -700,7 +686,7 @@ export default function App() {
                   <input
                     value={audience}
                     onChange={(e) => setAudience(e.target.value)}
-                    placeholder="e.g. Couples looking for meaningful gifts"
+                    placeholder="Describe your target audience"
                   />
                 </label>
 
@@ -788,9 +774,7 @@ export default function App() {
                 </label>
 
                 {error && (
-                  <p className="error" role="alert">
-                    {error}
-                  </p>
+                  <p className="error" role="alert">{error}</p>
                 )}
 
                 <button
@@ -848,7 +832,7 @@ export default function App() {
                 <small>YOUR CONTENT SCHEDULE</small>
                 <h1>Weekly Content Calendar</h1>
                 <p>
-                  View the generated posts grouped by their scheduled dates.
+                  View generated posts grouped by their scheduled dates.
                 </p>
               </div>
 
@@ -870,9 +854,7 @@ export default function App() {
             </div>
 
             {error && (
-              <p className="error" role="alert">
-                {error}
-              </p>
+              <p className="error" role="alert">{error}</p>
             )}
 
             {groupedPosts.length > 0 ? (
@@ -918,72 +900,72 @@ export default function App() {
               <small>AI CONTENT QUALITY CHECK</small>
               <h1>AI Content Review</h1>
               <p>
-                Analyse your generated posts and get suggestions to improve
+                Analyse generated posts and get suggestions to improve
                 captions, hashtags and calls to action.
               </p>
             </div>
 
             {error && (
-              <p className="error" role="alert">
-                {error}
-              </p>
+              <p className="error" role="alert">{error}</p>
             )}
 
             {posts.length > 0 ? (
               <div className="review-post-list">
-                {posts.map((post) => (
-                  <article
-                    className="review-card"
-                    key={post.id}
-                  >
-                    <div className="posthead">
-                      <b>{post.platform || "Social platform"}</b>
-                      <span>{post.content_type || "CONTENT"}</span>
-                    </div>
+                {posts.map((post, index) => {
+                  const postId =
+                    post.id ?? `${post.platform}-${post.date}-${index}`;
 
-                    <small>{getPostDate(post)}</small>
+                  return (
+                    <article className="review-card" key={postId}>
+                      <div className="posthead">
+                        <b>{post.platform || "Social platform"}</b>
+                        <span>{post.content_type || "CONTENT"}</span>
+                      </div>
 
-                    <div className="review-original">
-                      <h4>Original caption</h4>
-                      <p>{post.caption}</p>
+                      <small>{getPostDate(post)}</small>
 
-                      {post.hashtags?.length > 0 && (
-                        <p className="tags">
-                          {post.hashtags.join(" ")}
-                        </p>
-                      )}
+                      <div className="review-original">
+                        <h4>Original caption</h4>
+                        <p>{post.caption}</p>
 
-                      {post.call_to_action && (
-                        <p>
-                          <strong>CTA:</strong> {post.call_to_action}
-                        </p>
-                      )}
-                    </div>
+                        {post.hashtags?.length > 0 && (
+                          <p className="tags">
+                            {post.hashtags.join(" ")}
+                          </p>
+                        )}
 
-                    <button
-                      className="review-button"
-                      onClick={() => reviewPost(post)}
-                      disabled={reviewingId === post.id}
-                    >
-                      {reviewingId === post.id
-                        ? "Analysing content..."
-                        : reviewResults[post.id]
-                          ? "Review again"
-                          : "Review with AI"}
-                    </button>
+                        {post.call_to_action && (
+                          <p>
+                            <strong>CTA:</strong> {post.call_to_action}
+                          </p>
+                        )}
+                      </div>
 
-                    {reviewResults[post.id] &&
-                      renderReviewResult(reviewResults[post.id])}
-                  </article>
-                ))}
+                      <button
+                        className="review-button"
+                        onClick={() => reviewPost(post)}
+                        disabled={reviewingId === post.id}
+                      >
+                        {reviewingId === post.id
+                          ? "Analysing content..."
+                          : reviewResults[post.id]
+                            ? "Review again"
+                            : "Review with AI"}
+                      </button>
+
+                      {reviewResults[post.id] &&
+                        renderReviewResult(reviewResults[post.id])}
+                    </article>
+                  );
+                })}
               </div>
             ) : (
               <div className="empty">
                 <div>✦</div>
                 <h3>No content available for review</h3>
                 <p>
-                  Generate social media posts first. Your posts will appear
-                  here for AI quality checking.
+                  Generate social media posts first. Your posts will
+                  appear here for AI quality checking.
                 </p>
 
                 <button onClick={() => setActivePage("planner")}>
