@@ -30,7 +30,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:5173",
-        "http://127.0.0.1:5173"
+        "http://127.0.0.1:5173",
+        "https://ai-social-media-content-planner.vercel.app"
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -173,7 +174,7 @@ def regenerate(request: Regen):
 
 
 # --------------------------------------------------
-# AI CONTENT REVIEW AGENT
+# AI CONTENT REVIEW
 # --------------------------------------------------
 
 @app.post("/api/review")
